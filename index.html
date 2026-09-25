@@ -207,6 +207,19 @@
   /* 字卡气泡时间 */
   .msg-time { font-size: 10px; color: #b2b2b2; margin: 3px 4px 0; }
   .msg-row.mine .msg-time { text-align: right; }
+  /* 引用块（气泡内）与输入栏引用条 */
+  .quote-block { background: rgba(0,0,0,.07); border-left: 3px solid #07c160; border-radius: 4px; padding: 5px 8px; font-size: 12px; color: #666; margin: -3px -4px 6px; max-width: 230px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .msg-row.mine .quote-block { border-left-color: #95ec69; }
+  .quote-bar { display: none; align-items: center; gap: 8px; background: #f2f2f2; border-left: 3px solid #07c160; padding: 6px 12px; font-size: 12px; color: #666; }
+  .quote-bar .qb-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .quote-bar .qb-close { border: none; background: none; color: #999; cursor: pointer; font-size: 14px; padding: 2px 4px; }
+  /* 消息操作菜单 */
+  .act-btn { display: block; width: 100%; text-align: center; padding: 13px; font-size: 15px; background: none; border: none; border-bottom: 1px solid var(--wx-line); cursor: pointer; color: var(--wx-dark); }
+  .act-btn:last-child { border-bottom: none; }
+  .act-btn.danger { color: #fa5151; }
+  /* 导入/导出数据类别选择 */
+  .exp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px 12px; }
+  .exp-grid label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--wx-dark); cursor: pointer; }
 
   /* 字卡管理页 */
   .group-bar {
@@ -445,6 +458,10 @@
       <h4>表情包 <button class="tool" id="btn-sticker-manage">管理</button> <span style="color:#b2b2b2" id="stickerCount"></span></h4>
       <div class="sticker-grid" id="stickerGrid"></div>
       <input type="file" id="stickerFile" accept="image/*" multiple style="display:none">
+    </div>
+    <div class="quote-bar" id="quoteBar">
+      <div class="qb-text" id="quoteBarText"></div>
+      <button class="qb-close" id="quoteBarClose">✕</button>
     </div>
     <div class="input-bar">
       <button class="card-quick" id="btn-media" title="图片/视频">📎</button>
@@ -788,6 +805,53 @@
   </div>
 
   <!-- 通用输入弹窗（替代原生 prompt，沙箱环境下原生弹窗会被拦截） -->
+  <!-- 消息操作菜单（长按/双击气泡） -->
+  <div class="modal-mask" id="modal-msgact">
+    <div class="modal" style="width:220px">
+      <div class="modal-body" style="padding:0;overflow:hidden">
+        <button class="act-btn" id="act-quote">引用</button>
+        <button class="act-btn danger" id="act-del">删除</button>
+        <button class="act-btn" data-close>取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 导出数据弹窗 -->
+  <div class="modal-mask" id="modal-export">
+    <div class="modal">
+      <div class="modal-head"><span>导出数据</span><button class="x" data-close>✕</button></div>
+      <div class="modal-body">
+        <div class="exp-grid" id="expChecks"></div>
+        <div style="margin-top:12px;display:flex;gap:8px">
+          <button class="tool" id="btn-exp-all">全选</button>
+          <button class="tool" id="btn-exp-none">清空</button>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" data-close>取消</button>
+        <button class="btn" id="btn-exp-ok">导出所选</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 导入数据弹窗 -->
+  <div class="modal-mask" id="modal-import">
+    <div class="modal">
+      <div class="modal-head"><span>导入数据</span><button class="x" data-close>✕</button></div>
+      <div class="modal-body">
+        <div class="form-label">导入模式</div>
+        <label class="use-sticker-label"><input type="radio" name="imp-mode" value="merge" checked> 合并：追加到现有数据，不删除已有内容</label>
+        <label class="use-sticker-label"><input type="radio" name="imp-mode" value="overwrite"> 覆盖：所选分类整体替换现有数据（不可恢复）</label>
+        <div class="form-label" style="margin-top:8px">选择要导入的数据</div>
+        <div class="exp-grid" id="impChecks"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" data-close>取消</button>
+        <button class="btn" id="btn-imp-ok">确认导入</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-mask" id="modal-prompt">
     <div class="modal">
       <div class="modal-head"><span id="promptTitle">输入</span><button class="x" data-close>✕</button></div>
@@ -1053,6 +1117,7 @@ function enterChatPage() {
   document.getElementById("page-list").classList.remove("active");
   document.getElementById("page-chat").classList.add("active");
   stickerPanel.style.display = "none";
+  clearQuote();
   applyChatBg();
   renderChat();
   document.getElementById("inputText").focus();
@@ -1070,6 +1135,7 @@ function backToList() {
   document.getElementById("page-chat").classList.remove("active");
   document.getElementById("page-list").classList.add("active");
   currentContactId = null; currentGroupId = null;
+  clearQuote();
   renderList();
 }
 document.getElementById("btn-back").onclick = backToList;
@@ -1095,7 +1161,7 @@ function renderChat() {
         ${avatarHTML(av, 38)}
         <div class="bubble-wrap">
           ${senderName ? `<div class="sender-name">${esc(senderName)}</div>` : ""}
-          <div class="bubble" style="${m.img || m.video ? "padding:3px;" : ""}">${m.img ? `<img class="bubble-img" src="${m.img}" alt="表情包">` : m.video ? `<video class="bubble-video" src="${m.video}" controls playsinline></video>` : esc(m.text)}</div>
+          <div class="bubble" data-idx="${i}" style="${(m.img || m.video) && !m.quote ? "padding:3px;" : ""}">${m.quote ? `<div class="quote-block">${esc(m.quote.name)}：${esc(m.quote.text)}</div>` : ""}${m.img ? `<img class="bubble-img" src="${m.img}" alt="表情包">` : m.video ? `<video class="bubble-video" src="${m.video}" controls playsinline></video>` : esc(m.text)}</div>
           <div class="msg-time">${fmtTime(m.time)}</div>
         </div>
       </div>`;
@@ -1107,6 +1173,69 @@ function typingHTML() {
   const c = currentEntity();
   return `<div class="msg-row" id="typingRow">${avatarHTML(c.avatar, 38)}<div class="bubble-wrap"><div class="typing"><span></span><span></span><span></span></div></div></div>`;
 }
+
+/* ---------- 消息操作：长按/双击气泡 → 引用 / 删除 ---------- */
+let msgActCtx = null;   // {c, idx, m}
+let pendingQuote = null; // {name, text} 待发送的引用
+function quotePreview(m) {
+  return m.img ? "[图片]" : m.video ? "[视频]" : (m.text || "").slice(0, 40);
+}
+function quoteOwnerName(ctx) {
+  const { c, m } = ctx;
+  if (m.role === "me") return data.me.name || "我";
+  if (currentGroupId && m.senderId) {
+    const s = data.contacts.find(x => x.id === m.senderId);
+    if (s) return s.name;
+  }
+  return c.name;
+}
+function renderQuoteBar() {
+  const bar = document.getElementById("quoteBar");
+  if (!pendingQuote) { bar.style.display = "none"; return; }
+  document.getElementById("quoteBarText").textContent = `引用 ${pendingQuote.name}：${pendingQuote.text}`;
+  bar.style.display = "flex";
+}
+function clearQuote() { pendingQuote = null; renderQuoteBar(); }
+document.getElementById("quoteBarClose").onclick = clearQuote;
+
+const chatAreaEl = document.getElementById("chatArea");
+let lpTimer = null;
+function openMsgAction(idx) {
+  const c = currentEntity();
+  if (!c) return;
+  const m = c.messages[idx];
+  if (!m || m.role === "sys") return;
+  msgActCtx = { c, idx, m };
+  document.getElementById("modal-msgact").classList.add("show");
+}
+chatAreaEl.addEventListener("pointerdown", e => {
+  if (e.target.closest("video")) return; // 视频控件不抢长按
+  const bubble = e.target.closest(".bubble");
+  if (!bubble || bubble.dataset.idx === undefined) return;
+  const idx = +bubble.dataset.idx;
+  clearTimeout(lpTimer);
+  lpTimer = setTimeout(() => openMsgAction(idx), 450);
+});
+["pointerup", "pointermove", "pointercancel", "pointerleave"].forEach(ev =>
+  chatAreaEl.addEventListener(ev, () => clearTimeout(lpTimer)));
+chatAreaEl.addEventListener("dblclick", e => {
+  const bubble = e.target.closest(".bubble");
+  if (bubble && bubble.dataset.idx !== undefined) openMsgAction(+bubble.dataset.idx);
+});
+document.getElementById("act-quote").onclick = () => {
+  document.getElementById("modal-msgact").classList.remove("show");
+  if (!msgActCtx) return;
+  pendingQuote = { name: quoteOwnerName(msgActCtx), text: quotePreview(msgActCtx.m) };
+  renderQuoteBar();
+  document.getElementById("inputText").focus();
+};
+document.getElementById("act-del").onclick = () => {
+  document.getElementById("modal-msgact").classList.remove("show");
+  if (!msgActCtx) return;
+  const { c, idx } = msgActCtx;
+  c.messages.splice(idx, 1);
+  save(); renderChat(); toast("已删除");
+};
 
 /* ---------- 发送与回复 ---------- */
 const inputEl = document.getElementById("inputText");
@@ -1126,7 +1255,10 @@ function send() {
   if (!c) return;
   const text = inputEl.value.trim();
   if (!text) return;
-  c.messages.push({ role: "me", text, time: Date.now() });
+  const msg = { role: "me", text, time: Date.now() };
+  if (pendingQuote) msg.quote = pendingQuote;
+  c.messages.push(msg);
+  clearQuote();
   inputEl.value = ""; inputEl.style.height = "auto"; sendBtn.disabled = true;
   save(); renderChat();
 
@@ -1167,6 +1299,9 @@ function doReply(c) {
   const rate = c.stickerRate != null ? c.stickerRate : 30;
   const minC = Math.max(1, c.minCount || 1), maxC = Math.max(minC, c.maxCount || minC);
   const n = randInt(minC, maxC);
+  // 30% 概率引用我最近一条消息（仅首条文字回复携带）
+  const myLast = [...c.messages].reverse().find(x => x.role === "me");
+  let quoteMe = myLast && Math.random() < 0.3 ? { name: data.me.name || "我", text: quotePreview(myLast) } : null;
   for (let i = 0; i < n; i++) {
     const useSticker = stickers.length && (!pool.length || Math.random() * 100 < rate);
     if (useSticker) {
@@ -1175,7 +1310,9 @@ function doReply(c) {
     } else if (pool.length) {
       let reply = puzText(c) ?? pool[Math.floor(Math.random() * pool.length)];
       reply = reply.replace(/\{name\}/g, data.me.name || "朋友");
-      c.messages.push({ role: "them", text: reply, time: Date.now() });
+      const msg = { role: "them", text: reply, time: Date.now() };
+      if (quoteMe) { msg.quote = quoteMe; quoteMe = null; }
+      c.messages.push(msg);
     } else {
       c.messages.push({ role: "them", text: "（对方还没有绑定字卡分组，去编辑联系人为其选择字卡分组吧）", time: Date.now() });
     }
@@ -1203,10 +1340,10 @@ function scheduleGroupReply(g) {
 function groupMembers(g) {
   return (g.memberIds || []).map(id => data.contacts.find(x => x.id === id)).filter(Boolean);
 }
-function makeMemberReply(m) {
+function makeMemberReply(m, g) {
   const pool = (m.cardGroupIds || []).flatMap(gid => {
-    const g = data.cardGroups.find(x => x.id === gid);
-    return g ? g.cards.map(x => x.text) : [];
+    const gr = data.cardGroups.find(x => x.id === gid);
+    return gr ? gr.cards.map(x => x.text) : [];
   }).filter(t => t && t.trim());
   const stickers = m.useStickers !== false ? (data.libStickers || []) : [];
   const rate = m.stickerRate != null ? m.stickerRate : 30;
@@ -1214,7 +1351,11 @@ function makeMemberReply(m) {
     return { img: stickers[Math.floor(Math.random() * stickers.length)].img };
   }
   if (pool.length) {
-    return { text: (puzText(m) ?? pool[Math.floor(Math.random() * pool.length)]).replace(/\{name\}/g, data.me.name || "朋友") };
+    const msg = { text: (puzText(m) ?? pool[Math.floor(Math.random() * pool.length)]).replace(/\{name\}/g, data.me.name || "朋友") };
+    // 30% 概率引用我最近一条消息
+    const myLast = g ? [...g.messages].reverse().find(x => x.role === "me") : null;
+    if (myLast && Math.random() < 0.3) msg.quote = { name: data.me.name || "我", text: quotePreview(myLast) };
+    return msg;
   }
   return { text: "（我还没有绑定字卡分组，点我的头像去编辑吧）" };
 }
@@ -1225,7 +1366,7 @@ function doGroupReply(g) {
   const shuffled = members.slice().sort(() => Math.random() - 0.5);
   const repliers = shuffled.slice(0, randInt(1, Math.min(2, members.length)));
   repliers.forEach((m, i) => {
-    const msg = makeMemberReply(m);
+    const msg = makeMemberReply(m, g);
     setTimeout(() => {
       g.messages.push({ role: "them", senderId: m.id, ...msg, time: Date.now() });
       save();
@@ -2545,13 +2686,52 @@ document.getElementById("btn-group-more").onclick = () => {
   });
 };
 
-/* ---------- 导入导出 ---------- */
+/* ---------- 导入导出（可选择数据类别） ---------- */
+const CATEGORIES = [
+  { key: "contacts",    label: "联系人（含聊天记录）", count: d => (d.contacts || []).length },
+  { key: "groups",      label: "群聊",                 count: d => (d.groups || []).length },
+  { key: "cardGroups",  label: "字卡库",               count: d => (d.cardGroups || []).reduce((s, g) => s + (g.cards || []).length, 0) },
+  { key: "stickers",    label: "我的表情包",           count: d => (d.stickers || []).length },
+  { key: "libStickers", label: "表情包分区",           count: d => (d.libStickers || []).length },
+  { key: "patCards",    label: "拍一拍字卡",           count: d => (d.patCards || []).length },
+  { key: "voiceCards",  label: "语音字卡",             count: d => (d.voiceCards || []).length },
+  { key: "queCards",    label: "问题字卡",             count: d => (d.queCards || []).length },
+  { key: "puzCards",    label: "拼字卡",               count: d => (d.puzCards || []).length },
+  { key: "moments",     label: "朋友圈",               count: d => (d.moments || []).length },
+  { key: "letters",     label: "信箱",                 count: d => (d.letters || []).length },
+  { key: "me",          label: "我的信息",             count: d => d.me ? 1 : 0 }
+];
+function renderChecks(boxId, counts, checkedSet) {
+  document.getElementById(boxId).innerHTML = CATEGORIES.map(cat => {
+    const n = counts ? counts[cat.key] : null;
+    if (counts && !n) return ""; // 导入时只显示文件里有的
+    return `<label><input type="checkbox" value="${cat.key}" ${checkedSet && checkedSet.has(cat.key) ? "checked" : ""}> ${cat.label}${counts ? `（${n}）` : ""}</label>`;
+  }).join("");
+}
+function getChecks(boxId) {
+  return new Set([...document.getElementById(boxId).querySelectorAll("input:checked")].map(el => el.value));
+}
+const exportModal = document.getElementById("modal-export");
+const importModal = document.getElementById("modal-import");
+let impData = null;
 document.getElementById("btn-export").onclick = () => {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  renderChecks("expChecks", null, new Set(CATEGORIES.map(c => c.key)));
+  exportModal.classList.add("show");
+};
+document.getElementById("btn-exp-all").onclick = () => document.querySelectorAll("#expChecks input").forEach(el => el.checked = true);
+document.getElementById("btn-exp-none").onclick = () => document.querySelectorAll("#expChecks input").forEach(el => el.checked = false);
+document.getElementById("btn-exp-ok").onclick = () => {
+  const sel = getChecks("expChecks");
+  if (!sel.size) { toast("请至少选择一项"); return; }
+  const out = { type: "linghunliu-export", version: 1, exportedAt: new Date().toISOString() };
+  CATEGORIES.forEach(cat => { if (sel.has(cat.key)) out[cat.key] = data[cat.key]; });
+  const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "linghunliu-backup.json";
+  a.download = "linghunliu-export-" + Date.now() + ".json";
   a.click(); URL.revokeObjectURL(a.href);
+  exportModal.classList.remove("show");
+  toast(`已导出 ${sel.size} 类数据`);
 };
 document.getElementById("btn-import-btn").onclick = () => document.getElementById("btn-import").click();
 document.getElementById("btn-import").onchange = e => {
@@ -2561,14 +2741,81 @@ document.getElementById("btn-import").onchange = e => {
   r.onload = () => {
     try {
       const d = JSON.parse(r.result);
-      if (!d || !Array.isArray(d.contacts)) throw 0;
-      if (!confirm(`将导入 ${d.contacts.length} 个联系人，覆盖当前数据，继续吗？`)) return;
-      data = migrate(d); save(); renderList(); scheduleAllContactMoments(); scheduleAllContactLetters(); scheduleAllContactQuestions(); scheduleAllContactAvatars(); scheduleAllContactNames(); scheduleAllContactSigns(); scheduleAllContactCalls(); toast("导入成功");
+      if (!d || typeof d !== "object" || Array.isArray(d)) throw 0;
+      impData = d;
+      const counts = {};
+      CATEGORIES.forEach(cat => { const n = cat.count(d); if (n) counts[cat.key] = n; });
+      if (!Object.keys(counts).length) { toast("文件中没有可导入的数据"); return; }
+      renderChecks("impChecks", counts, new Set(Object.keys(counts)));
+      importModal.classList.add("show");
     } catch (_) { toast("文件格式不正确"); }
   };
   r.readAsText(f);
   e.target.value = "";
 };
+/* 覆盖模式：所选分类整体替换 */
+function applyOverwrite(sel, d) {
+  ["contacts", "groups", "cardGroups", "stickers", "libStickers", "patCards", "voiceCards", "queCards", "puzCards", "moments", "letters"].forEach(k => {
+    if (sel.has(k)) data[k] = Array.isArray(d[k]) ? JSON.parse(JSON.stringify(d[k])) : [];
+  });
+  if (sel.has("me") && d.me) data.me = { ...d.me };
+}
+/* 合并模式：追加，联系人/群聊/字卡分组重新分配 id 并重映射引用 */
+function applyMerge(sel, d) {
+  const idMapC = {}, idMapG = {};
+  if (sel.has("cardGroups")) {
+    (d.cardGroups || []).forEach(g => {
+      const ng = { ...g, id: uid(), cards: (g.cards || []).map(t => typeof t === "string" ? { id: uid(), text: t } : { ...t, id: uid() }) };
+      idMapG[g.id] = ng.id;
+      data.cardGroups.push(ng);
+    });
+  }
+  if (sel.has("contacts")) {
+    (d.contacts || []).forEach(c => {
+      const nc = { ...c, id: uid(), messages: (c.messages || []).map(x => ({ ...x })) };
+      nc.cardGroupIds = (nc.cardGroupIds || []).map(id => idMapG[id] || id);
+      idMapC[c.id] = nc.id;
+      data.contacts.push(nc);
+    });
+  }
+  if (sel.has("groups")) {
+    (d.groups || []).forEach(g => {
+      data.groups.push({
+        ...g, id: uid(),
+        memberIds: (g.memberIds || []).map(id => idMapC[id] || id),
+        messages: (g.messages || []).map(x => {
+          const nm = { ...x };
+          if (nm.senderId && idMapC[nm.senderId]) nm.senderId = idMapC[nm.senderId];
+          return nm;
+        })
+      });
+    });
+  }
+  ["stickers", "libStickers", "patCards", "voiceCards", "queCards", "puzCards", "moments", "letters"].forEach(k => {
+    if (sel.has(k) && Array.isArray(d[k])) data[k] = data[k].concat(d[k].map(x => ({ ...x, id: uid() })));
+  });
+  if (sel.has("me") && d.me) data.me = { ...data.me, ...d.me };
+}
+document.getElementById("btn-imp-ok").onclick = () => {
+  if (!impData) return;
+  const sel = getChecks("impChecks");
+  if (!sel.size) { toast("请至少选择一项"); return; }
+  const mode = document.querySelector("input[name=imp-mode]:checked").value;
+  if (mode === "overwrite") applyOverwrite(sel, impData); else applyMerge(sel, impData);
+  data = migrate(data);
+  if (!data.cardGroups.length) data.cardGroups.push({ id: uid(), name: "默认分组", cards: [] });
+  if (!data.cardGroups.find(g => g.id === curGroupId)) curGroupId = data.cardGroups[0].id;
+  save(); renderList(); renderCardsPage();
+  scheduleAllContactMoments(); scheduleAllContactLetters(); scheduleAllContactQuestions();
+  scheduleAllContactAvatars(); scheduleAllContactNames(); scheduleAllContactSigns(); scheduleAllContactCalls();
+  importModal.classList.remove("show");
+  toast(mode === "overwrite" ? "已覆盖导入" : "已合并导入");
+  impData = null;
+};
+[exportModal, importModal].forEach(md => {
+  md.querySelectorAll("[data-close]").forEach(el => el.onclick = () => md.classList.remove("show"));
+  md.addEventListener("click", e => { if (e.target === md) md.classList.remove("show"); });
+});
 
 /* ---------- 语音/视频通话 ---------- */
 const callMask = document.getElementById("callMask");
