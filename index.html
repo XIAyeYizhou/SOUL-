@@ -1148,7 +1148,7 @@ function renderChat() {
   if (!c.messages.length) {
     box.innerHTML = `<div class="tip-row"><span class="sys-tip">已${isGroup ? "进入群聊「" + esc(c.name) + "」" : "与「" + esc(c.name) + "」开始聊天"}${isGroup ? " · 群成员会随机回复你" : " · 对方会随机抽取字卡回复你"}</span></div>`;
   } else {
-    box.innerHTML = c.messages.map(m => {
+    box.innerHTML = c.messages.map((m, i) => {
       if (m.role === "sys") return `<div class="tip-row"><span class="sys-tip">${esc(m.text)}</span></div>`;
       const mine = m.role === "me";
       let av = mine ? data.me.avatar : c.avatar;
