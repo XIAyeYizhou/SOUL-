@@ -1412,7 +1412,7 @@ function renderStickers() {
   };
 }
 
-/* 表情包上传（聊天页 + 表情包分区共用）：自动压缩，不再因超过 1MB 被静默丢弃 */
+/* 表情包上传（聊天页 + 表情包分区共用）：统一压缩到 20KB 以内 */
 function addStickerFiles(files, arr, done) {
   const list = files.filter(f => f.type && f.type.startsWith("image/") && f.size <= 20 * 1024 * 1024);
   if (!list.length) { toast("请选择图片文件（单张 20MB 以内）"); return; }
@@ -1425,14 +1425,7 @@ function addStickerFiles(files, arr, done) {
   };
   list.forEach(f => {
     const r = new FileReader();
-    r.onload = () => {
-      if (f.size <= 512 * 1024) { // 小图保留原图（保住透明背景）
-        arr.push({ id: uid(), img: r.result });
-        finishOne();
-      } else { // 大图自动压缩到 240px，足够气泡显示
-        compressImage(r.result, 240, img => { arr.push({ id: uid(), img }); finishOne(); });
-      }
-    };
+    r.onload = () => compressToSize(r.result, 240, 20 * 1024, img => { arr.push({ id: uid(), img }); finishOne(); });
     r.onerror = finishOne;
     r.readAsDataURL(f);
   });
@@ -1640,9 +1633,9 @@ function renderGroupAvatarPicker() {
   box.querySelector("#groupAvatarFile").onchange = e => {
     const f = e.target.files[0];
     if (!f) return;
-    if (f.size > 1024 * 1024) { toast("图片太大，请选择 1MB 以内的图片"); return; }
+    if (f.size > 20 * 1024 * 1024) { toast("请选择 20MB 以内的图片"); return; }
     const r = new FileReader();
-    r.onload = () => { pickGroupAvatarImg = r.result; renderGroupAvatarPicker(); };
+    r.onload = () => compressToSize(r.result, 256, 40 * 1024, url => { pickGroupAvatarImg = url; renderGroupAvatarPicker(); });
     r.readAsDataURL(f);
   };
   const rm = box.querySelector("#btn-remove-group-avatar");
@@ -1724,9 +1717,9 @@ function renderAvatarPicker() {
   box.querySelector("#avatarFile").onchange = e => {
     const f = e.target.files[0];
     if (!f) return;
-    if (f.size > 1024 * 1024) { toast("图片太大，请选择 1MB 以内的图片"); return; }
+    if (f.size > 20 * 1024 * 1024) { toast("请选择 20MB 以内的图片"); return; }
     const r = new FileReader();
-    r.onload = () => { pickAvatarImg = r.result; renderAvatarPicker(); };
+    r.onload = () => compressToSize(r.result, 256, 40 * 1024, url => { pickAvatarImg = url; renderAvatarPicker(); });
     r.readAsDataURL(f);
   };
   const rm = box.querySelector("#btn-remove-avatar");
@@ -1744,6 +1737,29 @@ function compressImage(dataUrl, maxW, cb) {
     canvas.height = Math.round(img.height * scale);
     canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
     cb(canvas.toDataURL("image/jpeg", 0.85));
+  };
+  img.onerror = () => cb(dataUrl);
+  img.src = dataUrl;
+}
+/* 带体积目标的压缩：先按 maxW 缩放，再逐步降质量/缩尺寸，直到结果 ≤ maxBytes（base64 估算） */
+function compressToSize(dataUrl, maxW, maxBytes, cb) {
+  const img = new Image();
+  img.onload = () => {
+    let scale = Math.min(1, maxW / img.width), quality = 0.85;
+    const draw = (s, q) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.width * s));
+      canvas.height = Math.max(1, Math.round(img.height * s));
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/jpeg", q);
+    };
+    let out = draw(scale, quality);
+    while (out.length * 0.75 > maxBytes && (quality > 0.3 || scale > 0.12)) {
+      if (quality > 0.3) quality -= 0.15; // 先降质量
+      else scale *= 0.8;                  // 还不够就继续缩尺寸
+      out = draw(scale, quality);
+    }
+    cb(out);
   };
   img.onerror = () => cb(dataUrl);
   img.src = dataUrl;
@@ -1811,7 +1827,7 @@ document.getElementById("avatarLibFile").onchange = e => {
   files.forEach(f => {
     if (f.size > 2 * 1024 * 1024) { if (++done === files.length) renderAvatarLibPicker(); return; }
     const r = new FileReader();
-    r.onload = () => compressImage(r.result, 256, url => {
+    r.onload = () => compressToSize(r.result, 256, 40 * 1024, url => {
       pickAvatarLib.push(url);
       if (++done === files.length) renderAvatarLibPicker();
     });
@@ -3187,9 +3203,9 @@ function renderMeAvatar() {
   box.querySelector("#meAvatarFile").onchange = e => {
     const f = e.target.files[0];
     if (!f) return;
-    if (f.size > 1024 * 1024) { toast("图片太大，请选择 1MB 以内的图片"); return; }
+    if (f.size > 20 * 1024 * 1024) { toast("请选择 20MB 以内的图片"); return; }
     const r = new FileReader();
-    r.onload = () => { meAvatarImg = r.result; renderMeAvatar(); };
+    r.onload = () => compressToSize(r.result, 256, 40 * 1024, url => { meAvatarImg = url; renderMeAvatar(); });
     r.readAsDataURL(f);
   };
   const rm = box.querySelector("#btn-remove-me-avatar");
